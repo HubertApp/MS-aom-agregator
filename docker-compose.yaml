@@ -1,0 +1,86 @@
+services:
+  broker:
+    container_name: rabbitmq-aom-agregator
+    image: rabbitmq:management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: "user"
+      RABBITMQ_DEFAULT_PASS: "password"
+      RABBITMQ_ERLANG_COOKIE: "secret_cookie_hubbert_12345"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: rabbitmq-diagnostics -q "check_port_connectivity"
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    networks:
+      - ms-admin-network
+
+  mongodb:
+    container_name: mongodb-hubbert
+    image: mongo:latest
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: "mongouser"
+      MONGO_INITDB_ROOT_PASSWORD: "mongopassword"
+    volumes:
+      - mongodb_data:/data/db
+    ports:
+      - "27017:27017"
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+    networks:
+      - ms-admin-network
+
+  app:
+    build: ../MS-Admin
+    container_name: ms-admin-api
+    ports:
+      - "8001:80"
+    volumes:
+      - .:/project
+    command: "uvicorn app.main:app --host 0.0.0.0 --port 80 --reload --reload-dir /project"
+    env_file:
+      - .env
+    environment:
+      - RABBITMQ_URL=amqp://user:password@broker:5672
+    depends_on:
+      broker:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+    networks:
+      - ms-admin-network
+  # worker:
+  #   build: .
+  #   container_name: ms-admin-worker
+  #   ports:
+  #     - "8000:80"
+  #   volumes:
+  #     - ./app:/project/app
+  #   command: python -m uvicorn app.run_worker:app --host 0.0.0.0 --port 80 --reload --reload-dir /project/app
+  #   environment:
+  #     - DATABASE_URL=postgresql+asyncpg://user:password@db/ms_admin_db
+  #     - RABBITMQ_URL=amqp://user:password@broker:5672
+  #   depends_on:
+  #     broker:
+  #       condition: service_healthy
+  #     db:
+  #       condition: service_healthy
+  #   networks:
+  #     - ms-admin-network
+
+volumes:
+  rabbitmq_data:
+  mongodb_data:
+
+networks:
+   ms-admin-network:
+    driver: bridge  
