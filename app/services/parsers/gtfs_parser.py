@@ -2,171 +2,111 @@
 import asyncio
 import csv
 import os
-from typing import List, Dict, Any
+from typing import Any, Dict, List, Type
 
-from app.graphql.types.gtfs_data import GTFSData
+from pydantic import ValidationError
+
+from app.models.gtfs import (
+    Agency,
+    Calendar,
+    CalendarDate,
+    GTFSBase,
+    Route,
+    Shape,
+    Stop,
+    StopTime,
+    Transfer,
+    Trip,
+)
 from app.services.parsers.i_parser import IParser
 
 
 class GTFSParser(IParser):
     """
-    Parseur GTFS : lit les fichiers .txt dézippés et les convertit en modèle standardisé.
+    Parseur GTFS : lit les fichiers .txt dézippés et les convertit en documents
+    prêts à être insérés en base.
+
+    Toute la validation et la normalisation (typage, valeurs par défaut,
+    préfixage des identifiants par le network_id) est déléguée aux modèles
+    Pydantic de app/models/gtfs.py. Comme ces modèles déclarent les noms de
+    colonnes GTFS en alias, chaque ligne brute de `csv.DictReader` leur est
+    passée telle quelle.
     """
 
-    async def parse(self, directory_path: str):
-        print(f"🔍 [GTFSParser] Démarrage de l'analyse dans : {directory_path}")
-        raw_agencies = await asyncio.to_thread(self._read_and_map_agencies, os.path.join(directory_path, "agency.txt"))
-        raw_routes = await asyncio.to_thread(self._read_and_map_routes, os.path.join(directory_path, "routes.txt"))
-        raw_stops = await asyncio.to_thread(self._read_and_map_stops, os.path.join(directory_path, "stops.txt"))
-        raw_trips = await asyncio.to_thread(self._read_and_map_trips, os.path.join(directory_path, "trips.txt"))
-        raw_stop_times = await asyncio.to_thread(self._read_and_map_stop_times,
-                                                 os.path.join(directory_path, "stop_times.txt"))
-        raw_calendar = await asyncio.to_thread(self._read_and_map_calendar,
-                                               os.path.join(directory_path, "calendar.txt"))
-        raw_calendar_dates = await asyncio.to_thread(self._read_and_map_calendar_dates,"calendar_dates.txt")
+    # Association fichier GTFS -> (nom de la collection Mongo, modèle Pydantic).
+    FILE_MAPPING: List[tuple] = [
+        ("agency.txt", "agencies", Agency),
+        ("routes.txt", "routes", Route),
+        ("stops.txt", "stops", Stop),
+        ("trips.txt", "trips", Trip),
+        ("stop_times.txt", "stop_times", StopTime),
+        ("calendar.txt", "calendar", Calendar),
+        ("calendar_dates.txt", "calendar_dates", CalendarDate),
+        ("shapes.txt", "shapes", Shape),
+        ("transfers.txt", "transfers", Transfer),
+    ]
+
+    MAX_LOGGED_ERRORS = 10
+
+    async def parse(self, directory_path: str, network_id: str) -> Dict[str, List[Dict[str, Any]]]:
+        print(f"[GTFSParser] Démarrage de l'analyse dans : {directory_path} (network_id={network_id})")
+
+        result: Dict[str, List[Dict[str, Any]]] = {}
+
+        for file_name, collection_name, model in self.FILE_MAPPING:
+            file_path = os.path.join(directory_path, file_name)
+            documents = await asyncio.to_thread(self._read_file, file_path, model, network_id)
+            result[collection_name] = documents
+        result["stops"] = [self._to_geojson(stop) for stop in result.get("stops", [])]
+
         print(
-            f"✅ [GTFSParser] Fin du parsing ! "
-            f"({len(raw_agencies)} agences, {len(raw_routes)} lignes, {len(raw_stops)} arrêts, "
-            f"{len(raw_trips)} trips, {len(raw_stop_times)} horaires, "
-            f"{len(raw_calendar)} calendriers, {len(raw_calendar_dates)} dates d'exception)"
+            "✅ [GTFSParser] Fin du parsing ! "
+            + ", ".join(f"{len(docs)} {name}" for name, docs in result.items())
         )
-        return GTFSData(
-            agencies= raw_agencies,
-            routes =raw_routes,
-            stops=raw_stops,
-            stop_times= raw_stop_times,
-            calendar= raw_calendar,
-            calendar_dates= raw_calendar_dates,
-            trips= raw_trips
-        )
+        return result
 
-    def _read_and_map_agencies(self, file_path: str) -> List[Dict[str, Any]]:
+    def _read_file(
+        self,
+        file_path: str,
+        model: Type[GTFSBase],
+        network_id: str,
+    ) -> List[Dict[str, Any]]:
         if not os.path.exists(file_path):
+            print(f"{os.path.basename(file_path)} absent du flux, ignoré.")
             return []
 
-        mapped_data = []
-        with open(file_path, mode='r', encoding='utf-8-sig') as f:
+        documents: List[Dict[str, Any]] = []
+        errors = 0
+
+        with open(file_path, mode="r", encoding="utf-8-sig", newline="") as f:
             reader = csv.DictReader(f)
-            for row in reader:
-                mapped_data.append({
-                    "id": row.get("agency_id", "default"),
-                    "name": row.get("agency_name"),
-                    "url": row.get("agency_url"),
-                    "timezone": row.get("agency_timezone")
-                })
-        return mapped_data
+            for line_number, row in enumerate(reader, start=2): # start 2 pour ignorer l'entete
+                try:
+                    validated = model.model_validate(row, context={"network_id": network_id})
+                except ValidationError as exc:
+                    errors += 1
+                    if errors <= self.MAX_LOGGED_ERRORS:
+                        print(
+                            f"{os.path.basename(file_path)} ligne {line_number} ignorée : "
+                            f"{exc.error_count()} erreur(s) de validation "
+                            f"({'; '.join(e['msg'] for e in exc.errors()[:3])})"
+                        )
+                    continue
+                documents.append(validated.model_dump())
 
-    def _read_and_map_stops(self, file_path: str) -> List[Dict[str, Any]]:
-        if not os.path.exists(file_path):
-            return []
+        if errors:
+            print(
+                f"{os.path.basename(file_path)} : {errors} ligne(s) ignorée(s) "
+                f"sur {errors + len(documents)}."
+            )
+        print(f"{os.path.basename(file_path)} : {len(documents)} enregistrement(s).")
 
-        mapped_data = []
-        with open(file_path, mode='r', encoding='utf-8-sig') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                lat = float(row["stop_lat"]) if row.get("stop_lat") else 0.0
-                lon = float(row["stop_lon"]) if row.get("stop_lon") else 0.0
+        return documents
 
-                mapped_data.append({
-                    "stop_id": row.get("stop_id"),
-                    "name": row.get("stop_name"),
-                    "location": {
-                        "type": "Point",
-                        "coordinates": [lon, lat]
-                    }
-                })
-        return mapped_data
-
-    def _read_and_map_routes(self, file_path: str) -> List[Dict[str, Any]]:
-        if not os.path.exists(file_path):
-            return []
-
-        mapped_data = []
-        with open(file_path, mode='r', encoding='utf-8-sig') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                mapped_data.append({
-                    "route_id": row.get("route_id"),
-                    "short_name": row.get("route_short_name"),
-                    "long_name": row.get("route_long_name"),
-                    "type": int(row["route_type"]) if row.get("route_type") else 3
-                })
-        return mapped_data
-
-    def _read_and_map_trips(self, file_path: str) -> List[Dict[str, Any]]:
-        if not os.path.exists(file_path):
-            return []
-
-        mapped_data = []
-        with open(file_path, mode='r', encoding='utf-8-sig') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                mapped_data.append({
-                    "trip_id": row.get("trip_id"),
-                    "route_id": row.get("route_id"),
-                    "service_id": row.get("service_id"),
-                    "headsign": row.get("trip_headsign"),
-                    "direction_id": int(row["direction_id"]) if row.get("direction_id") and row[
-                        "direction_id"].isdigit() else 0,
-                    "shape_id": row.get("shape_id")
-                })
-        return mapped_data
-
-    def _read_and_map_stop_times(self, file_path: str) -> List[Dict[str, Any]]:
-        if not os.path.exists(file_path):
-            return []
-
-        mapped_data = []
-        with open(file_path, mode='r', encoding='utf-8-sig') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                seq = int(row["stop_sequence"]) if row.get("stop_sequence") and row["stop_sequence"].isdigit() else 0
-
-                mapped_data.append({
-                    "trip_id": row.get("trip_id"),
-                    "arrival_time": row.get("arrival_time"),
-                    "departure_time": row.get("departure_time"),
-                    "stop_id": row.get("stop_id"),
-                    "stop_sequence": seq
-                })
-        return mapped_data
-
-    def _read_and_map_calendar(self, file_path: str) -> List[Dict[str, Any]]:
-        if not os.path.exists(file_path):
-            return []
-
-        mapped_data = []
-        with open(file_path, mode='r', encoding='utf-8-sig') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                mapped_data.append({
-                    "service_id": row.get("service_id"),
-                    "monday": int(row.get("monday", 0)),
-                    "tuesday": int(row.get("tuesday", 0)),
-                    "wednesday": int(row.get("wednesday", 0)),
-                    "thursday": int(row.get("thursday", 0)),
-                    "friday": int(row.get("friday", 0)),
-                    "saturday": int(row.get("saturday", 0)),
-                    "sunday": int(row.get("sunday", 0)),
-                    "start_date": row.get("start_date"),
-                    "end_date": row.get("end_date")
-                })
-        return mapped_data
-
-    def _read_and_map_calendar_dates(self, file_path: str) -> List[Dict[str, Any]]:
-        if not os.path.exists(file_path):
-            return []
-
-        mapped_data = []
-        with open(file_path, mode='r', encoding='utf-8-sig') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                exception_type = int(row["exception_type"]) if row.get("exception_type") and row[
-                    "exception_type"].isdigit() else 0
-
-                mapped_data.append({
-                    "service_id": row.get("service_id"),
-                    "date": row.get("date"),  # Format YYYYMMDD
-                    "exception_type": exception_type
-                })
-        return mapped_data
+    @staticmethod
+    def _to_geojson(stop: Dict[str, Any]) -> Dict[str, Any]:
+        """Remplace les champs lat/lon d'un arrêt par un point GeoJSON."""
+        lat = stop.pop("lat", 0.0) or 0.0
+        lon = stop.pop("lon", 0.0) or 0.0
+        stop["location"] = {"type": "Point", "coordinates": [lon, lat]}
+        return stop

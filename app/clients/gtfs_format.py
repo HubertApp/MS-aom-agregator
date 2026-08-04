@@ -1,12 +1,10 @@
 import asyncio
 import os
 import shutil
-import tempfile
 import zipfile
 
 import httpx
 import aiofiles
-from typing import List
 
 from app.clients.i_format_tn import IFormatTN
 

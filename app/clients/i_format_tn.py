@@ -1,6 +1,5 @@
 # app/clients/i_format_tn.py
 from abc import ABC, abstractmethod
-from typing import List
 
 
 

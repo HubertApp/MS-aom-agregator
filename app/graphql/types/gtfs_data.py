@@ -72,3 +72,26 @@ class GTFSData:
     stop_times: List[StopTime] = field(default_factory=list)
     calendar: List[Calendar] = field(default_factory=list)
     calendar_dates: List[CalendarDate] = field(default_factory=list)
+
+
+@strawberry.type
+class DatasetResource:
+    """Une ressource téléchargeable au sein d'un jeu de données (ex: fichier GTFS zippé)."""
+    title: Optional[str] = None
+    format: Optional[str] = None
+    url: Optional[str] = None
+    updated: Optional[str] = None
+
+
+@strawberry.type
+class StandardDatasets:
+    """
+    Représentation normalisée d'un jeu de données de mobilité trouvé sur le
+    Point d'Accès National transport.data.gouv.fr, avant enregistrement.
+    """
+    id: str
+    title: str
+    description: Optional[str] = None
+    organization: Optional[str] = None
+    page_url: Optional[str] = None
+    resources: List[DatasetResource] = field(default_factory=list)

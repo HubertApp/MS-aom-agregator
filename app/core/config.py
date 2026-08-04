@@ -1,5 +1,3 @@
-from typing import Optional
-from pydantic import PostgresDsn, RedisDsn, AmqpDsn, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Secrets(BaseSettings):

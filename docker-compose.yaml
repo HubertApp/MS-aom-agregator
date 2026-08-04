@@ -9,8 +9,8 @@ services:
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     ports:
-      - "5672:5672"
-      - "15672:15672"
+      - "5673:5672"
+      - "15673:15672"
     healthcheck:
       test: rabbitmq-diagnostics -q "check_port_connectivity"
       interval: 10s
@@ -18,7 +18,7 @@ services:
       retries: 10
       start_period: 30s
     networks:
-      - ms-admin-network
+      - ms-aom-agregator-network
 
   mongodb:
     container_name: mongodb-hubbert
@@ -37,50 +37,48 @@ services:
       retries: 5
       start_period: 10s
     networks:
-      - ms-admin-network
+      - ms-aom-agregator-network
 
   app:
-    build: ../MS-Admin
-    container_name: ms-admin-api
+    build: .
+    container_name: ms-aom-agregator-api
     ports:
-      - "8001:80"
+      - "8002:80"
     volumes:
       - .:/project
     command: "uvicorn app.main:app --host 0.0.0.0 --port 80 --reload --reload-dir /project"
-    env_file:
-      - .env
     environment:
       - RABBITMQ_URL=amqp://user:password@broker:5672
+      - DATABASE_URL=mongodb://mongouser:mongopassword@mongodb:27017
     depends_on:
       broker:
         condition: service_healthy
       mongodb:
         condition: service_healthy
     networks:
-      - ms-admin-network
-  # worker:
-  #   build: .
-  #   container_name: ms-admin-worker
-  #   ports:
-  #     - "8000:80"
-  #   volumes:
-  #     - ./app:/project/app
-  #   command: python -m uvicorn app.run_worker:app --host 0.0.0.0 --port 80 --reload --reload-dir /project/app
-  #   environment:
-  #     - DATABASE_URL=postgresql+asyncpg://user:password@db/ms_admin_db
-  #     - RABBITMQ_URL=amqp://user:password@broker:5672
-  #   depends_on:
-  #     broker:
-  #       condition: service_healthy
-  #     db:
-  #       condition: service_healthy
-  #   networks:
-  #     - ms-admin-network
+      - ms-aom-agregator-network
+
+  worker:
+    build: .
+    container_name: ms-aom-agregator-worker
+    volumes:
+      - .:/project
+    command: python -m app.run_worker
+    environment:
+      - RABBITMQ_URL=amqp://user:password@broker:5672
+      - DATABASE_URL=mongodb://mongouser:mongopassword@mongodb:27017
+    depends_on:
+      broker:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+    networks:
+      - ms-aom-agregator-network
 
 volumes:
   rabbitmq_data:
   mongodb_data:
 
 networks:
-   ms-admin-network:
-    driver: bridge  
+  ms-aom-agregator-network:
+    driver: bridge
