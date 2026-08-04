@@ -1,9 +1,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from strawberry.fastapi import GraphQLRouter
 
-from app.core.config import properties
 #from app.graphql.schema import schema
 from fastapi.middleware.cors import CORSMiddleware
 
