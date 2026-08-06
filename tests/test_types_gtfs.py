@@ -1,5 +1,4 @@
 import pytest
-import strawberry
 
 from tests.conftest import FakeLoader, fake_info
 
