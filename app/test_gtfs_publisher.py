@@ -5,9 +5,7 @@ from app.core.config import secrets
 
 
 async def run_test():
-    # On se connecte au même RabbitMQ que le worker
     async with RabbitBroker(secrets.RABBITMQ_URL) as broker:
-        # Le payload qui correspond exactement au modèle Pydantic GTFSFileEvent
         payload = {
             "url": "https://www.data.gouv.fr/api/1/datasets/r/92af6161-1b1a-4e0b-8f60-d97f213d993a",
             "network_id": "test-network",

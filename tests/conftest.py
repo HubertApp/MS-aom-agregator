@@ -1,20 +1,14 @@
-"""
-Fixtures partagées de la campagne de tests d'ingestion.
-
-Les flux GTFS de test sont écrits à la volée dans `tmp_path` plutôt que commités :
-on teste de la logique, pas de la volumétrie, donc chaque fichier tient en deux
-ou trois lignes.
-"""
-
 from __future__ import annotations
 
 import itertools
 from pathlib import Path
-from typing import Callable, Dict
+from types import SimpleNamespace
+from typing import Any, Callable, Dict, List, Optional
 
 import pytest
 from mongomock_motor import AsyncMongoMockClient
 
+from app.graphql import context as context_module
 from app.services import ingestion_service as ingestion_module
 
 
@@ -98,10 +92,6 @@ def gtfs_feed_with_errors(ecrire_flux_gtfs: Callable[..., Path]) -> Path:
     return ecrire_flux_gtfs({**FLUX_DE_REFERENCE, "stops.txt": STOPS_AVEC_ERREURS})
 
 
-# --------------------------------------------------------------------------- #
-# MongoDB simulé
-# --------------------------------------------------------------------------- #
-
 @pytest.fixture
 def mock_db(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(ingestion_module.secrets, "DATABASE_URL", "mongodb://localhost:27017")
@@ -111,3 +101,179 @@ def mock_db(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.fixture
 def service(mock_db: None) -> ingestion_module.IngestionService:
     return ingestion_module.IngestionService()
+
+
+@pytest.fixture
+def graphql_db():
+    return AsyncMongoMockClient()["aom_db"]
+
+
+@pytest.fixture
+def mock_graphql_db(monkeypatch: pytest.MonkeyPatch):
+    fake_db = AsyncMongoMockClient()["aom_db"]
+    monkeypatch.setattr(context_module, "db", fake_db)
+    return fake_db
+
+class FakeLoader:
+    """Double de `DataLoader` : renvoie une valeur préparée et retient les clés reçues."""
+
+    def __init__(self, results: Optional[Dict[Any, Any]] = None, default: Any = None):
+        self._results = dict(results or {})
+        self._default = default
+        self.calls: List[Any] = []
+
+    async def load(self, key: Any) -> Any:
+        self.calls.append(key)
+        return self._results.get(key, self._default)
+
+    async def load_many(self, keys: List[Any]) -> List[Any]:
+        return [await self.load(key) for key in keys]
+
+
+class FakeStopRepository:
+
+    def __init__(
+        self,
+        documents: Optional[Dict[str, Dict[str, Any]]] = None,
+        nearby: Optional[List[Dict[str, Any]]] = None,
+    ):
+        self._documents = dict(documents or {})
+        self._nearby = list(nearby or [])
+        self.batches: List[List[str]] = []
+        self.calls: List[Dict[str, Any]] = []
+
+    async def get_many_by_ids(self, stop_ids: List[str]) -> Dict[str, Dict[str, Any]]:
+        self.batches.append(list(stop_ids))
+        return {
+            stop_id: document
+            for stop_id, document in self._documents.items()
+            if stop_id in stop_ids
+        }
+
+    async def find_nearby(self, **arguments: Any) -> List[Dict[str, Any]]:
+        self.calls.append(arguments)
+        return list(self._nearby)
+
+
+class FakeRouteRepository:
+
+    def __init__(
+        self,
+        documents: Optional[Dict[str, Dict[str, Any]]] = None,
+        paginated: Optional[List[Dict[str, Any]]] = None,
+        total_count: int = 0,
+    ):
+        self._documents = dict(documents or {})
+        self._paginated = list(paginated or [])
+        self._total_count = total_count
+        self.batches: List[List[str]] = []
+        self.calls: List[Dict[str, Any]] = []
+
+    async def get_many_by_ids(self, route_ids: List[str]) -> Dict[str, Dict[str, Any]]:
+        self.batches.append(list(route_ids))
+        return {
+            route_id: document
+            for route_id, document in self._documents.items()
+            if route_id in route_ids
+        }
+
+    async def list_paginated(self, **arguments: Any):
+        self.calls.append(arguments)
+        return list(self._paginated), self._total_count
+
+
+class FakeTripRepository:
+
+    def __init__(self, trips_by_route: Optional[Dict[str, List[Dict[str, Any]]]] = None):
+        self._trips_by_route = dict(trips_by_route or {})
+        self.calls: List[List[str]] = []
+
+    async def list_by_route_ids(self, route_ids: List[str]) -> Dict[str, List[Dict[str, Any]]]:
+        self.calls.append(list(route_ids))
+        # Comme le vrai repository : une ligne sans trajet est absente du résultat.
+        return {
+            route_id: self._trips_by_route[route_id]
+            for route_id in route_ids
+            if route_id in self._trips_by_route
+        }
+
+
+class FakeStopTimeRepository:
+
+    def __init__(
+        self,
+        counts_by_trip: Optional[Dict[str, int]] = None,
+        stops_by_trip: Optional[Dict[str, List[str]]] = None,
+        departures_by_stop: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+    ):
+        self._counts_by_trip = dict(counts_by_trip or {})
+        self._stops_by_trip = dict(stops_by_trip or {})
+        self._departures_by_stop = dict(departures_by_stop or {})
+        self.count_calls: List[List[str]] = []
+        self.list_calls: List[List[str]] = []
+        self.departure_calls: List[Dict[str, Any]] = []
+
+    async def count_by_trips(self, trip_ids: List[str]) -> Dict[str, int]:
+        self.count_calls.append(list(trip_ids))
+        return {
+            trip_id: self._counts_by_trip[trip_id]
+            for trip_id in trip_ids
+            if trip_id in self._counts_by_trip
+        }
+
+    async def list_for_trips(self, trip_ids: List[str]) -> Dict[str, List[Dict[str, Any]]]:
+        self.list_calls.append(list(trip_ids))
+        return {
+            trip_id: [{"trip_id": trip_id, "stop_id": stop_id, "stop_sequence": rang}
+                      for rang, stop_id in enumerate(self._stops_by_trip[trip_id], start=1)]
+            for trip_id in trip_ids
+            if trip_id in self._stops_by_trip
+        }
+
+    async def list_departures_for_stops(
+        self,
+        stop_ids: List[str],
+        after_seconds: int,
+        limit: int,
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        self.departure_calls.append(
+            {"stop_ids": list(stop_ids), "after_seconds": after_seconds, "limit": limit}
+        )
+        return {
+            stop_id: self._departures_by_stop[stop_id]
+            for stop_id in stop_ids
+            if stop_id in self._departures_by_stop
+        }
+
+
+class FakeShapeRepository:
+
+    def __init__(self, points_by_shape: Optional[Dict[str, List[List[float]]]] = None):
+        self._points_by_shape = dict(points_by_shape or {})
+        self.calls: List[List[str]] = []
+
+    async def list_points_for_shapes(self, shape_ids: List[str]) -> Dict[str, List[List[float]]]:
+        self.calls.append(list(shape_ids))
+        return {
+            shape_id: self._points_by_shape[shape_id]
+            for shape_id in shape_ids
+            if shape_id in self._points_by_shape
+        }
+
+
+def build_fake_context(**overrides: Any) -> Dict[str, Any]:
+    context: Dict[str, Any] = {
+        "stop_loader": FakeLoader(),
+        "departures_loader": FakeLoader(default=[]),
+        "route_loader": FakeLoader(),
+        "route_directions_loader": FakeLoader(default=[]),
+        "stop_routes_loader": FakeLoader(default=[]),
+        "stop_repository": FakeStopRepository(),
+        "route_repository": FakeRouteRepository(),
+    }
+    context.update(overrides)
+    return context
+
+
+def fake_info(**overrides: Any) -> SimpleNamespace:
+    return SimpleNamespace(context=build_fake_context(**overrides))

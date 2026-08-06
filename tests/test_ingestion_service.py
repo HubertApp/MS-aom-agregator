@@ -1,12 +1,3 @@
-"""
-Tests du service d'ingestion (app/services/ingestion_service.py).
-
-C'est ici que se joue l'invariant central du microservice : plusieurs AOM
-cohabitent dans les mêmes collections MongoDB, donc ingérer un réseau ne doit
-jamais toucher aux données d'un autre. L'implémentation précédente faisait un
-`renameCollection` qui écrasait la collection entière — ingérer Metz effaçait
-Nancy. C'est cette régression-là que la majorité des tests ci-dessous verrouille.
-"""
 
 import math
 
@@ -16,20 +7,7 @@ from app.services import ingestion_service as ingestion_module
 
 pytestmark = pytest.mark.usefixtures("mock_db")
 
-
-# --------------------------------------------------------------------------- #
-# Fabriques de données
-# --------------------------------------------------------------------------- #
-
 def arrets(network_id, identifiants=("1", "2"), nom="Arrêt"):
-    """
-    Fabrique de documents d'arrêts.
-
-    C'est une fonction et non une constante : `insert_many` ajoute un `_id` aux
-    dictionnaires qu'on lui passe, sur place. Réutiliser la même liste entre
-    deux ingestions provoquerait une erreur de clé dupliquée sans rapport avec
-    ce qu'on cherche à tester.
-    """
     return [
         {"stop_id": f"{network_id}:{i}", "name": f"{nom} {i}"} for i in identifiants
     ]
@@ -38,13 +16,7 @@ def arrets(network_id, identifiants=("1", "2"), nom="Arrêt"):
 def routes(network_id, identifiants=("R1",)):
     return [{"route_id": f"{network_id}:{i}", "short_name": i} for i in identifiants]
 
-
-# --------------------------------------------------------------------------- #
-# Espionnage de la base
-# --------------------------------------------------------------------------- #
-
 class CollectionEspionnee:
-    """Délègue tout à la vraie collection, en journalisant écritures et purges."""
 
     def __init__(self, collection, nom, journal, purge_en_echec=None, avant_purge=None):
         self._collection = collection
@@ -84,7 +56,6 @@ class BaseEspionnee:
 
 @pytest.fixture
 def journal(service):
-    """Branche un espion sur la base du service et retourne le journal des appels."""
     appels = []
     service.db = BaseEspionnee(service.db, appels)
     return appels
@@ -117,11 +88,6 @@ def installer_parseur(monkeypatch):
 async def documents_de(service, collection, network_id):
     return await service.db[collection].find({"network_id": network_id}).to_list(None)
 
-
-# --------------------------------------------------------------------------- #
-# Orchestration
-# --------------------------------------------------------------------------- #
-
 async def test_l_ingestion_transmet_le_dossier_et_le_reseau_au_parseur(
     service, installer_parseur
 ):
@@ -143,11 +109,6 @@ async def test_l_ingestion_ecrit_en_base_le_resultat_du_parseur(service, install
 async def test_un_format_inconnu_remonte_une_erreur(service):
     with pytest.raises(ValueError):
         await service.ingest_datas("/flux/extrait", "NETEX", "N1")
-
-
-# --------------------------------------------------------------------------- #
-# Marquage des documents
-# --------------------------------------------------------------------------- #
 
 async def test_chaque_document_insere_porte_le_reseau_ingere(service):
     await service._save_to_mongodb({"stops": arrets("N1")}, "N1")
@@ -181,11 +142,6 @@ async def test_deux_ingestions_successives_ont_des_identifiants_differents(servi
     second = (await documents_de(service, "stops", "N1"))[0]["_ingestion_id"]
 
     assert premier != second
-
-
-# --------------------------------------------------------------------------- #
-# Isolation entre réseaux
-# --------------------------------------------------------------------------- #
 
 async def test_ingerer_un_second_reseau_laisse_le_premier_intact(service):
     await service._save_to_mongodb({"stops": arrets("metz")}, "metz")
@@ -234,11 +190,6 @@ async def test_reingerer_un_flux_modifie_met_a_jour_les_valeurs_en_base(service)
     documents = await documents_de(service, "stops", "N1")
     assert [doc["name"] for doc in documents] == ["Nouveau nom 1"]
 
-
-# --------------------------------------------------------------------------- #
-# Collections vides
-# --------------------------------------------------------------------------- #
-
 async def test_une_collection_vide_ne_declenche_aucune_ecriture(service, journal):
     await service._save_to_mongodb({"stops": arrets("N1"), "shapes": []}, "N1")
 
@@ -255,11 +206,6 @@ async def test_une_collection_absente_du_nouveau_flux_conserve_ses_documents(ser
 
     assert await service.db["shapes"].count_documents({"network_id": "N1"}) == 1
 
-
-# --------------------------------------------------------------------------- #
-# Ordre des opérations (blue/green)
-# --------------------------------------------------------------------------- #
-
 async def test_les_insertions_precedent_toutes_les_suppressions(service, journal):
     await service._save_to_mongodb({"stops": arrets("N1"), "routes": routes("N1")}, "N1")
     journal.clear()
@@ -273,8 +219,6 @@ async def test_les_insertions_precedent_toutes_les_suppressions(service, journal
 
 
 async def test_le_reseau_reste_lisible_pendant_toute_la_reingestion(service):
-    # Corollaire du test précédent, vérifié côté données : au moment où la purge
-    # démarre, la nouvelle version est déjà en base.
     await service._save_to_mongodb({"stops": arrets("N1")}, "N1")
 
     presents_au_debut_de_la_purge = []
@@ -290,11 +234,6 @@ async def test_le_reseau_reste_lisible_pendant_toute_la_reingestion(service):
 
     # Les deux versions coexistent le temps de la bascule : 2 anciens + 2 nouveaux.
     assert presents_au_debut_de_la_purge == [4]
-
-
-# --------------------------------------------------------------------------- #
-# Insertion par lots
-# --------------------------------------------------------------------------- #
 
 async def test_tous_les_documents_sont_inseres_malgre_le_decoupage_en_lots(
     service, monkeypatch
@@ -314,14 +253,8 @@ async def test_le_nombre_de_lots_suit_la_taille_configuree(service, monkeypatch,
     insertions = [appel for appel in journal if appel[0] == "insert_many"]
     assert len(insertions) == math.ceil(7 / 3)
 
-
-# --------------------------------------------------------------------------- #
-# Index
-# --------------------------------------------------------------------------- #
-
 @pytest.fixture
 def collections_indexees(service, monkeypatch):
-    """Remplace la création d'index par un simple enregistrement des appels."""
     appels = []
 
     async def _enregistrer(collection_name):
@@ -347,14 +280,7 @@ async def test_aucun_index_n_est_cree_pour_une_collection_ignoree(service, colle
     "collection", ["stops", "stop_times", "trips", "routes", "calendar_dates"]
 )
 async def test_la_creation_des_index_ne_leve_pas_d_exception(service, collection):
-    # On ne va pas plus loin : mongomock-motor accepte create_index mais ne
-    # reproduit pas le comportement réel des index.
     await service._ensure_indexes(collection)
-
-
-# --------------------------------------------------------------------------- #
-# Robustesse de la purge
-# --------------------------------------------------------------------------- #
 
 async def test_l_echec_de_purge_d_une_collection_n_empeche_pas_les_suivantes(service):
     await service._save_to_mongodb({"stops": arrets("N1"), "routes": routes("N1")}, "N1")

@@ -1,15 +1,14 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-
-#from app.graphql.schema import schema
 from fastapi.middleware.cors import CORSMiddleware
+from strawberry.fastapi import GraphQLRouter
 
+from app.core.config import properties
+from app.graphql.context import get_context
+from app.graphql.schema import schema
 from app.run_worker import broker
 
-#graphql_app = GraphQLRouter(
- #   schema
-#)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -18,8 +17,9 @@ async def lifespan(app: FastAPI):
     yield
     await broker.disconnect()
     print("Deconnexion du serveur RabbitMQ")
-app = FastAPI()
-#app.include_router(graphql_app, prefix=properties.GRAPHQL_PREFIX)
+
+
+app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -28,3 +28,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+graphql_app = GraphQLRouter(schema, context_getter=get_context)
+app.include_router(graphql_app, prefix=properties.GRAPHQL_PREFIX)

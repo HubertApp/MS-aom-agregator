@@ -1,10 +1,3 @@
-"""
-Tests des modèles Pydantic de validation GTFS (app/models/gtfs.py).
-
-Ces modèles sont la porte d'entrée du pipeline : ce sont eux qui décident
-qu'une ligne du flux est exploitable, qui la typent, et qui préfixent ses
-identifiants par le réseau en cours d'ingestion.
-"""
 
 import pytest
 from pydantic import ValidationError
@@ -24,10 +17,6 @@ from app.models.gtfs import (
 RESEAU = {"network_id": "N1"}
 
 
-# --------------------------------------------------------------------------- #
-# Namespacing des identifiants
-# --------------------------------------------------------------------------- #
-
 def test_l_identifiant_d_arret_est_prefixe_par_le_reseau():
     arret = Stop.model_validate({"stop_id": "1"}, context=RESEAU)
 
@@ -36,8 +25,6 @@ def test_l_identifiant_d_arret_est_prefixe_par_le_reseau():
 
 @pytest.mark.parametrize("contexte", [None, {}], ids=["contexte_absent", "contexte_vide"])
 def test_sans_reseau_dans_le_contexte_l_identifiant_reste_brut(contexte):
-    # Comportement volontaire : il permet d'instancier un modèle à la main sans
-    # avoir à simuler une ingestion.
     arret = Stop.model_validate({"stop_id": "1"}, context=contexte)
 
     assert arret.stop_id == "1"
@@ -51,8 +38,6 @@ def test_deux_reseaux_produisent_deux_identifiants_distincts():
 
 
 def test_la_station_parente_d_un_arret_est_namespacee():
-    # Piège classique : une référence laissée brute casse silencieusement la
-    # jointure arrêt -> station parente une fois les réseaux agrégés.
     arret = Stop.model_validate({"stop_id": "2", "parent_station": "1"}, context=RESEAU)
 
     assert arret.parent_station == "N1:1"
@@ -100,29 +85,18 @@ def test_l_identifiant_de_trace_est_namespace_sur_le_point_de_trace():
 
     assert point.shape_id == "N1:SH1"
 
-
-# --------------------------------------------------------------------------- #
-# Le cas agency_id
-# --------------------------------------------------------------------------- #
-
 @pytest.mark.parametrize(
     "colonnes",
     [{}, {"agency_id": ""}],
     ids=["colonne_absente", "colonne_vide"],
 )
 def test_une_agence_sans_identifiant_retombe_sur_un_default_namespace(colonnes):
-    # La spec GTFS rend agency_id facultatif quand le flux n'a qu'un opérateur,
-    # ce qui est le cas de beaucoup de flux français.
     agence = Agency.model_validate({"agency_name": "Réseau", **colonnes}, context=RESEAU)
 
     assert agence.agency_id == "N1:default"
 
 
 def test_une_route_sans_agence_pointe_vers_l_agence_par_defaut_du_meme_reseau():
-    # Test le plus important du lot : c'est lui qui garantit que la jointure
-    # routes -> agency tient encore quand le flux ne renseigne pas agency_id.
-    # D'où l'assertion croisée entre les deux modèles plutôt que deux
-    # assertions littérales indépendantes.
     agence = Agency.model_validate({"agency_name": "Réseau"}, context=RESEAU)
     route = Route.model_validate({"route_id": "R1"}, context=RESEAU)
 
@@ -135,14 +109,7 @@ def test_le_default_d_agence_differe_d_un_reseau_a_l_autre():
 
     assert metz.agency_id != nancy.agency_id
 
-
-# --------------------------------------------------------------------------- #
-# Nettoyage des valeurs CSV
-# --------------------------------------------------------------------------- #
-
 def test_une_chaine_vide_sur_un_entier_optionnel_devient_nulle():
-    # Le GTFS est du CSV : une valeur absente arrive en chaîne vide, jamais en
-    # None. Sans nettoyage, Pydantic refuserait "" pour un champ int.
     arret = Stop.model_validate({"stop_id": "1", "wheelchair_boarding": ""}, context=RESEAU)
 
     assert arret.wheelchair_boarding is None
@@ -163,7 +130,6 @@ def test_une_chaine_vide_sur_un_texte_optionnel_devient_nulle():
 
 
 def test_des_coordonnees_vides_valent_zero():
-    # lat/lon ne sont pas optionnelles : elles alimentent le point GeoJSON.
     arret = Stop.model_validate(
         {"stop_id": "1", "stop_lat": "", "stop_lon": ""}, context=RESEAU
     )
@@ -184,15 +150,7 @@ def test_une_colonne_non_modelisee_est_ignoree_sans_erreur():
 
     assert arret.stop_id == "N1:1"
 
-
-# --------------------------------------------------------------------------- #
-# Types et formats propres au GTFS
-# --------------------------------------------------------------------------- #
-
 def test_un_horaire_apres_minuit_est_conserve_tel_quel():
-    # "25:30:00" est un horaire GTFS valide : un passage après minuit rattaché
-    # au service de la veille. Ni `time` ni `datetime` ne savent le représenter,
-    # d'où la conservation en chaîne.
     passage = StopTime.model_validate(
         {"trip_id": "T1", "stop_id": "1", "arrival_time": "25:30:00"}, context=RESEAU
     )
@@ -217,7 +175,6 @@ def test_la_date_d_exception_reste_une_chaine():
 
 
 def test_un_block_id_textuel_est_accepte():
-    # block_id est un identifiant textuel dans la spec, pas un entier.
     trajet = Trip.model_validate(
         {"trip_id": "T1", "route_id": "R1", "service_id": "S1", "block_id": "BLK-01"},
         context=RESEAU,
@@ -235,7 +192,6 @@ def test_le_temps_minimal_de_correspondance_devient_un_entier_de_secondes():
 
 
 def test_l_accessibilite_en_fauteuil_reste_un_entier():
-    # 0/1/2 dans la spec : un bool perdrait l'information « non accessible » (2).
     trajet = Trip.model_validate(
         {"trip_id": "T1", "route_id": "R1", "service_id": "S1", "wheelchair_accessible": "2"},
         context=RESEAU,
@@ -248,11 +204,6 @@ def test_le_type_de_route_devient_un_entier():
     route = Route.model_validate({"route_id": "R1", "route_type": "0"}, context=RESEAU)
 
     assert route.type == 0
-
-
-# --------------------------------------------------------------------------- #
-# Rejet des lignes sans clé primaire
-# --------------------------------------------------------------------------- #
 
 @pytest.mark.parametrize(
     "ligne",
@@ -290,13 +241,7 @@ def test_une_correspondance_sans_arret_de_depart_est_rejetee():
     with pytest.raises(ValidationError):
         Transfer.model_validate({"to_stop_id": "2"}, context=RESEAU)
 
-
-# --------------------------------------------------------------------------- #
-# Sérialisation vers MongoDB
-# --------------------------------------------------------------------------- #
-
 def test_la_serialisation_utilise_les_noms_de_champs_python_et_non_les_alias_gtfs():
-    # Ce sont ces clés qui deviennent les noms de champs dans MongoDB.
     arret = Stop.model_validate(
         {"stop_id": "1", "stop_name": "Gare", "stop_desc": "Quai A", "stop_lat": "48.5"},
         context=RESEAU,
