@@ -1,0 +1,21 @@
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# Tests & couverture
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+.ruff_cache/
+
+# IDE
+.idea/
+.vscode/
+
+# Flux GTFS téléchargés à l'exécution
+tmp_download/*
+!tmp_download/.gitkeep

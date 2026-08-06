@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# Un nouveau push sur une branche déjà en cours de test annule le run précédent,
+# pour ne pas empiler les jobs sur une série de commits rapprochés.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: Lint & tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@v4
+
+      - name: Installer uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      # --locked échoue si uv.lock n'est plus cohérent avec pyproject.toml :
+      # ça évite qu'une dépendance ajoutée sans relock passe inaperçue.
+      # uv installe au passage la version de Python fixée par .python-version.
+      - name: Installer les dépendances
+        run: uv sync --group dev --locked
+
+      - name: Lint
+        run: uv run ruff check .
+
+      # La suite tourne hors ligne (MongoDB est simulé en mémoire), donc aucun
+      # service ni conteneur n'est nécessaire ici.
+      - name: Tests
+        run: >
+          uv run pytest -q
+          --cov=app.services
+          --cov=app.models
+          --cov-report=term-missing
+          --cov-fail-under=85
