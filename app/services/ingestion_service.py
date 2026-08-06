@@ -19,7 +19,7 @@ class IngestionService:
         parser = ParserFactory.get_parser(format_type)
         standardized_data = await parser.parse(directory_path, network_id)
         await self._save_to_mongodb(standardized_data, network_id)
-        print("{IngestionService] Ingestion terminée avec succès !")
+        print("[IngestionService] Ingestion terminée avec succès !")
 
     async def _save_to_mongodb(self, data: Dict[str, List[Dict[str, Any]]], network_id: str):
         ingestion_id = uuid.uuid4().hex
