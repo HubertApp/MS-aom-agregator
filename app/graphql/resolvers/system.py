@@ -1,2 +1,2 @@
-
-async def resolve_status():return "Online"
+async def resolve_status() -> str:
+    return "Online"

@@ -3,9 +3,9 @@ services:
     container_name: rabbitmq-aom-agregator
     image: rabbitmq:management-alpine
     environment:
-      RABBITMQ_DEFAULT_USER: "user"
-      RABBITMQ_DEFAULT_PASS: "password"
-      RABBITMQ_ERLANG_COOKIE: "secret_cookie_hubbert_12345"
+      RABBITMQ_DEFAULT_USER: "${RABBITMQ_DEFAULT_USER:-user}"
+      RABBITMQ_DEFAULT_PASS: "${RABBITMQ_DEFAULT_PASS:-password}"
+      RABBITMQ_ERLANG_COOKIE: "${RABBITMQ_ERLANG_COOKIE:?set in .env}"
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     ports:

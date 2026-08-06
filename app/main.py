@@ -7,7 +7,7 @@ from strawberry.fastapi import GraphQLRouter
 from app.core.config import properties
 from app.graphql.context import get_context
 from app.graphql.schema import schema
-from app.run_worker import broker
+from app.core.broker import broker
 
 
 @asynccontextmanager
