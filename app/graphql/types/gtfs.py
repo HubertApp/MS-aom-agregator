@@ -36,9 +36,9 @@ class GeoJSONLineString:
     coordinates: List[List[float]] = strawberry.field(default_factory=list)
 
 
-@strawberry.federation.type(keys=["id"], extend=True)
+@strawberry.federation.type(keys=["externalId"], extend=True)
 class TransitNetwork:
-    id: strawberry.ID = strawberry.federation.field(external=True)
+    external_id: str = strawberry.federation.field(external=True)
 
 
 @strawberry.type
@@ -73,7 +73,7 @@ class Route:
 
     @strawberry.field
     def network(self) -> TransitNetwork:
-        return TransitNetwork(id=strawberry.ID(self.network_id))
+        return TransitNetwork(external_id=self.network_id)
 
     @strawberry.field
     async def directions(self, info: strawberry.Info) -> List[RouteDirection]:
@@ -167,7 +167,7 @@ class Stop:
 
     @strawberry.field
     def network(self) -> TransitNetwork:
-        return TransitNetwork(id=strawberry.ID(self.network_id))
+        return TransitNetwork(external_id=self.network_id)
 
     @strawberry.field
     async def departures(

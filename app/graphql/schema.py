@@ -16,4 +16,4 @@ class Query:
     route: Optional[Route] = strawberry.field(resolver=resolve_route)
     status: str = strawberry.field(resolver=resolve_status)
 
-schema = strawberry.federation.Schema(query=Query)
+schema = strawberry.federation.Schema(query=Query, federation_version="2.0")
