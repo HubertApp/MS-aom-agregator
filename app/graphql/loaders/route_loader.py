@@ -56,7 +56,7 @@ def build_route_directions_loader(
         stop_times_by_trip = await stop_time_repository.list_for_trips(
             [trip["trip_id"] for trip in chosen_trips]
         )
-        shape_ids = [trip["shape_id"] for trip in chosen_trips if trip.get("shape_id")]
+        shape_ids = sorted({trip["shape_id"] for trip in chosen_trips if trip.get("shape_id")})
         points_by_shape = await shape_repository.list_points_for_shapes(shape_ids) if shape_ids else {}
 
         results: List[List[Dict[str, Any]]] = []

@@ -4,7 +4,7 @@ from app.workers.callbacks.gtfs_callback import router
 from faststream import FastStream
 from faststream.rabbit import RabbitBroker
 from app.core.config import secrets
-print(secrets.RABBITMQ_URL)
+# Ne pas afficher RABBITMQ_URL (peut contenir des identifiants).
 broker = RabbitBroker(secrets.RABBITMQ_URL)
 broker.include_router(router)
 
