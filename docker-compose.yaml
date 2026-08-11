@@ -1,27 +1,10 @@
+# Les noms de service sont volontairement uniques : Compose ajoute toujours le
+# nom de service comme alias DNS, et MS-Admin déclare aussi « mongodb » et
+# « app » sur hubert-network. Deux conteneurs partageant un alias, c'est une
+# résolution en round-robin, donc des erreurs intermittentes très trompeuses.
 services:
-  broker:
-    container_name: rabbitmq-aom-agregator
-    image: rabbitmq:management-alpine
-    environment:
-      RABBITMQ_DEFAULT_USER: "user"
-      RABBITMQ_DEFAULT_PASS: "password"
-      RABBITMQ_ERLANG_COOKIE: "secret_cookie_hubbert_12345"
-    volumes:
-      - rabbitmq_data:/var/lib/rabbitmq
-    ports:
-      - "5672:5672"
-      - "15672:15672"
-    healthcheck:
-      test: rabbitmq-diagnostics -q "check_port_connectivity"
-      interval: 10s
-      timeout: 10s
-      retries: 10
-      start_period: 30s
-    networks:
-      - ms-aom-agregator-network
-
-  mongodb:
-    container_name: mongodb-hubbert
+  mongodb-aom:
+    container_name: mongodb-aom-agregator
     image: mongo:latest
     environment:
       MONGO_INITDB_ROOT_USERNAME: "mongouser"
@@ -29,7 +12,7 @@ services:
     volumes:
       - mongodb_data:/data/db
     ports:
-      - "27017:27017"
+      - "27002:27017"
     healthcheck:
       test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
       interval: 10s
@@ -37,26 +20,25 @@ services:
       retries: 5
       start_period: 10s
     networks:
-      - ms-aom-agregator-network
+      - hubert-network
 
-  app:
+  aom-agregator-api:
     build: .
-    container_name: ms-aom-agregator-api
+    container_name: service-aom-agregator
     ports:
       - "8002:80"
     volumes:
       - .:/project
     command: "uvicorn app.main:app --host 0.0.0.0 --port 80 --reload --reload-dir /project"
     environment:
-      - RABBITMQ_URL=amqp://user:password@broker:5672
-      - DATABASE_URL=mongodb://mongouser:mongopassword@mongodb:27017
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
+      # On vise le nom de conteneur, garanti unique sur le réseau partagé.
+      - DATABASE_URL=mongodb://mongouser:mongopassword@mongodb-aom-agregator:27017
     depends_on:
-      broker:
-        condition: service_healthy
-      mongodb:
+      mongodb-aom:
         condition: service_healthy
     networks:
-      - ms-aom-agregator-network
+      - hubert-network
 
   worker:
     build: .
@@ -65,20 +47,18 @@ services:
       - .:/project
     command: python -m app.run_worker
     environment:
-      - RABBITMQ_URL=amqp://user:password@broker:5672
-      - DATABASE_URL=mongodb://mongouser:mongopassword@mongodb:27017
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
+      # On vise le nom de conteneur, garanti unique sur le réseau partagé.
+      - DATABASE_URL=mongodb://mongouser:mongopassword@mongodb-aom-agregator:27017
     depends_on:
-      broker:
-        condition: service_healthy
-      mongodb:
+      mongodb-aom:
         condition: service_healthy
     networks:
-      - ms-aom-agregator-network
+      - hubert-network
 
 volumes:
-  rabbitmq_data:
   mongodb_data:
 
 networks:
-  ms-aom-agregator-network:
-    driver: bridge
+  hubert-network:
+    external: true
