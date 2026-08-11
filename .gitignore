@@ -15,6 +15,7 @@ htmlcov/
 # IDE
 .idea/
 .vscode/
+.run/
 
 # Flux GTFS téléchargés à l'exécution
 tmp_download/*
