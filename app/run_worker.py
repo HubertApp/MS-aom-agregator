@@ -1,5 +1,10 @@
 # run_worker.py
 import asyncio
+
+# Doit s'exécuter avant tout autre import applicatif (voir app/main.py).
+from app.otel_setup import setup_otel
+setup_otel()
+
 from app.workers.callbacks.gtfs_callback import router
 from faststream import FastStream
 from faststream.rabbit import RabbitBroker
