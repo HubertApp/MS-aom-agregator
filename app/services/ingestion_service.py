@@ -70,6 +70,7 @@ class IngestionService:
         elif collection_name == "stop_times":
             await collection.create_index([("stop_id", ASCENDING), ("departure_seconds", ASCENDING)])
             await collection.create_index([("trip_id", ASCENDING), ("stop_sequence", ASCENDING)])
+            await collection.create_index([("network_id", ASCENDING), ("service_id", ASCENDING)])
         elif collection_name == "trips":
             await collection.create_index([("route_id", ASCENDING)])
             await collection.create_index([("service_id", ASCENDING)])
