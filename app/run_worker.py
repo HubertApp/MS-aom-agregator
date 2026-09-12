@@ -3,6 +3,8 @@ import asyncio
 from app.workers.callbacks.gtfs_callback import router
 from faststream import FastStream
 from app.core.broker import broker
+from app.otel_setup import setup_otel
+setup_otel()
 
 broker.include_router(router)
 
