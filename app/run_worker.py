@@ -2,10 +2,8 @@
 import asyncio
 from app.workers.callbacks.gtfs_callback import router
 from faststream import FastStream
-from faststream.rabbit import RabbitBroker
-from app.core.config import secrets
-# Ne pas afficher RABBITMQ_URL (peut contenir des identifiants).
-broker = RabbitBroker(secrets.RABBITMQ_URL)
+from app.core.broker import broker
+
 broker.include_router(router)
 
 app = FastStream(broker)

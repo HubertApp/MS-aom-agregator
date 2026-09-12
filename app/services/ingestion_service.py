@@ -15,13 +15,14 @@ class IngestionService:
         self.client = AsyncIOMotorClient(secrets.DATABASE_URL)
         self.db = self.client["aom_db"]
 
-    async def ingest_datas(self, directory_path: str, format_type: str, network_id: str):
+    async def ingest_datas(self, directory_path: str, format_type: str, network_id: str) -> str:
         parser = ParserFactory.get_parser(format_type)
         standardized_data = await parser.parse(directory_path, network_id)
-        await self._save_to_mongodb(standardized_data, network_id)
+        ingestion_id = await self._save_to_mongodb(standardized_data, network_id)
         print("[IngestionService] Ingestion terminée avec succès !")
+        return ingestion_id
 
-    async def _save_to_mongodb(self, data: Dict[str, List[Dict[str, Any]]], network_id: str):
+    async def _save_to_mongodb(self, data: Dict[str, List[Dict[str, Any]]], network_id: str) -> str:
         ingestion_id = uuid.uuid4().hex
 
         print(f"[Ingestion {ingestion_id[:8]}] Phase 1 : écriture des nouveaux documents (réseau {network_id})...")
@@ -58,6 +59,8 @@ class IngestionService:
             except Exception as e:
                 print(f"Erreur lors de la purge de {collection_name} : {e}")
 
+        return ingestion_id
+
     async def _ensure_indexes(self, collection_name: str):
 
         collection = self.db[collection_name]
@@ -70,6 +73,7 @@ class IngestionService:
         elif collection_name == "stop_times":
             await collection.create_index([("stop_id", ASCENDING), ("departure_seconds", ASCENDING)])
             await collection.create_index([("trip_id", ASCENDING), ("stop_sequence", ASCENDING)])
+            await collection.create_index([("network_id", ASCENDING), ("service_id", ASCENDING)])
         elif collection_name == "trips":
             await collection.create_index([("route_id", ASCENDING)])
             await collection.create_index([("service_id", ASCENDING)])
