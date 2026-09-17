@@ -1,4 +1,4 @@
-from faststream.rabbit import Channel, RabbitBroker, ExchangeType
+from faststream.rabbit import Channel, RabbitBroker, ExchangeType, RabbitExchange
 from app.core.config import secrets
 
 broker = RabbitBroker(
