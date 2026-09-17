@@ -8,9 +8,6 @@ from app.services.ingestion_service import IngestionService
 
 router = RabbitRouter()
 
-# Fil de retour vers MS-Admin : sans lui, un réseau resterait indéfiniment en
-# PENDING_AGGREGATION. persist=True car un résultat perdu au redémarrage du
-# broker laisserait le réseau dans le même état bloqué.
 result_publisher = router.publisher(GTFS_INGESTION_RESULT, persist=True)
 
 
