@@ -3,47 +3,71 @@ from datetime import datetime, timezone
 from pydantic import BaseModel
 from faststream.rabbit import RabbitRouter
 from app.clients.gtfs_format import GTFSFormat
-from app.core.broker import broker, gtfs_events_exchange
+from app.core.topology import GTFS_FILE_AVAILABLE, GTFS_INGESTION_RESULT
 from app.services.ingestion_service import IngestionService
 
 router = RabbitRouter()
+
+result_publisher = router.publisher(GTFS_INGESTION_RESULT, persist=True)
 
 
 class GTFSFileEvent(BaseModel):
     url: str
     network_id: str
+    format: str = "GTFS"
     extract_to: str = "/tmp/gtfs_data"
 
 
-@router.subscriber("gtfs.file.available")  # type: ignore
+@router.subscriber(GTFS_FILE_AVAILABLE)  # type: ignore
 async def handle_gtfs_available(message: GTFSFileEvent):
-    print(f"Démarrage du traitement pour : {message.url} (network_id={message.network_id})")
+    print(
+        f"Démarrage du traitement pour : {message.url} "
+        f"(network_id={message.network_id}, format={message.format})"
+    )
 
     file_client = GTFSFormat()
-    await file_client.download(download_dir="./tmp_download", url=message.url)
-    await file_client.extract(extract_dir=message.extract_to)
 
-    ingestion_service = IngestionService()
+    try:
+        await file_client.download(download_dir="./tmp_download", url=message.url)
+        await file_client.extract(extract_dir=message.extract_to)
 
-    ingestion_id = await ingestion_service.ingest_datas(
-        directory_path=message.extract_to,
-        format_type="GTFS",
-        network_id=message.network_id,
-    )
+        ingestion_service = IngestionService()
 
-    await file_client.clean()
-    await file_client.delete_all_files(message.extract_to)
+        await ingestion_service.ingest_datas(
+            directory_path=message.extract_to,
+            format_type=message.format,
+            network_id=message.network_id,
+        )
 
-    # Publie en dernier : si quoi que ce soit a echoue au-dessus, une exception
-    # est remontee et l'evenement n'est jamais emis. Personne n'est prevenu a tort.
-    await broker.publish(
-        {
+        print("Traitement complet terminé avec succès")
+
+        await result_publisher.publish({
             "network_id": message.network_id,
-            "ingestion_id": ingestion_id,
-            "ingested_at": datetime.now(timezone.utc).isoformat(),
-        },
-        exchange=gtfs_events_exchange,
-        routing_key="gtfs.network.ingested",
-    )
+            "status": "ok",
+            "error": None,
+        })
 
-    print("Traitement complet terminé avec succès")
+    except Exception as e:
+        print(f"Échec du traitement pour le réseau {message.network_id} : {e}")
+
+        try:
+            await result_publisher.publish({
+                "network_id": message.network_id,
+                "status": "error",
+                "error": str(e),
+            })
+        except Exception as publish_error:
+            print(f"Impossible de publier le résultat en erreur : {publish_error}")
+        raise
+
+    finally:
+        await _nettoyer(file_client, message.extract_to)
+
+
+async def _nettoyer(file_client: GTFSFormat, extract_to: str) -> None:
+    """Nettoie les fichiers temporaires sans jamais masquer le résultat du traitement."""
+    try:
+        await file_client.clean()
+        await file_client.delete_all_files(extract_to)
+    except Exception as e:
+        print(f"Erreur lors du nettoyage des fichiers temporaires : {e}")

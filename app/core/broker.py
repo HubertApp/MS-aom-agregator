@@ -1,7 +1,9 @@
-from faststream.rabbit import ExchangeType, RabbitBroker, RabbitExchange
+from faststream.rabbit import Channel, RabbitBroker, ExchangeType
 from app.core.config import secrets
 
-broker = RabbitBroker(secrets.RABBITMQ_URL)
+broker = RabbitBroker(
+    secrets.RABBITMQ_URL,
+    default_channel=Channel(on_return_raises=True),
 
 gtfs_events_exchange = RabbitExchange(
     "gtfs.events",

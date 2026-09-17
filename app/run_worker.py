@@ -10,5 +10,9 @@ broker.include_router(router)
 
 app = FastStream(broker)
 
+@app.after_startup
+async def declarer_topologie() -> None:
+    await broker.declare_queue(GTFS_INGESTION_RESULT)
+
 if __name__ == "__main__":
     asyncio.run(app.run())
