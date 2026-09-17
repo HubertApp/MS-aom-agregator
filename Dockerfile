@@ -1,5 +1,7 @@
 FROM python:3.13-slim-bookworm
 
+ENV PYTHONUNBUFFERED=1
+
 RUN apt-get update && apt-get install --no-install-recommends -y \
         build-essential curl && \
     apt-get clean && rm -rf /var/lib/apt/lists/*

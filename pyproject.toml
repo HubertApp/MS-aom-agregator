@@ -15,12 +15,12 @@ dependencies = [
     "ruff>=0.14.10",
     "strawberry-graphql[fastapi]>=0.288.1",
     "uvicorn>=0.40.0",
-    "opentelemetry-sdk>=1.27.0",
-    "opentelemetry-exporter-otlp-proto-grpc>=1.27.0",
-    "opentelemetry-instrumentation-fastapi>=0.48b0",
-    "opentelemetry-instrumentation-httpx>=0.48b0",
-    "opentelemetry-instrumentation-logging>=0.48b0",
-    "opentelemetry-instrumentation-system-metrics>=0.48b0",
+    "opentelemetry-sdk==1.44.0",
+    "opentelemetry-exporter-otlp-proto-grpc==1.44.0",
+    "opentelemetry-instrumentation-fastapi==0.65b0",
+    "opentelemetry-instrumentation-httpx==0.65b0",
+    "opentelemetry-instrumentation-logging==0.65b0",
+    "opentelemetry-instrumentation-system-metrics==0.65b0",
 ]
 
 [dependency-groups]
