@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from pydantic import BaseModel
 from faststream.rabbit import RabbitRouter
 from app.clients.gtfs_format import GTFSFormat
@@ -58,12 +60,7 @@ async def handle_gtfs_available(message: GTFSFileEvent):
                 "error": str(e),
             })
         except Exception as publish_error:
-            # Un échec de publication ne doit pas masquer la cause d'origine.
             print(f"Impossible de publier le résultat en erreur : {publish_error}")
-
-        # Le résultat est déjà publié : on laisse remonter pour que FastStream
-        # applique sa politique d'acquittement (REJECT_ON_ERROR par défaut,
-        # donc rejet sans remise en file) et journalise la trace complète.
         raise
 
     finally:
