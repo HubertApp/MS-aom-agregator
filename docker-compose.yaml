@@ -25,6 +25,9 @@ services:
   aom-agregator-api:
     build: .
     container_name: service-aom-agregator
+    labels:
+      logging: "enabled"
+      service: "service-aom-agregator"
     ports:
       - "8002:80"
     volumes:
@@ -32,8 +35,11 @@ services:
     command: "uvicorn app.main:app --host 0.0.0.0 --port 80 --reload --reload-dir /project"
     environment:
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
-      # On vise le nom de conteneur, garanti unique sur le réseau partagé.
       - DATABASE_URL=mongodb://mongouser:mongopassword@mongodb-aom-agregator:27017
+      - PYTHONUNBUFFERED=1
+      - OTEL_SERVICE_NAME=service-aom-agregator
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_LOGS_EXPORTER=none
     depends_on:
       mongodb-aom:
         condition: service_healthy
@@ -43,13 +49,19 @@ services:
   worker:
     build: .
     container_name: ms-aom-agregator-worker
+    labels:
+      logging: "enabled"
+      service: "aom-agregator-worker"
     volumes:
       - .:/project
     command: python -m app.run_worker
     environment:
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
-      # On vise le nom de conteneur, garanti unique sur le réseau partagé.
       - DATABASE_URL=mongodb://mongouser:mongopassword@mongodb-aom-agregator:27017
+      - PYTHONUNBUFFERED=1
+      - OTEL_SERVICE_NAME=aom-agregator-worker
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_LOGS_EXPORTER=none
     depends_on:
       mongodb-aom:
         condition: service_healthy
