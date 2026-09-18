@@ -78,7 +78,7 @@ def test_un_arret_dont_la_position_est_vide_n_a_pas_de_position():
 
 
 def test_un_arret_reprend_le_reseau_du_document():
-    assert _arret().network().id == "N1"
+    assert _arret().network().external_id == "N1"
 
 
 def test_un_arret_sans_reseau_dans_le_document_a_un_reseau_vide():
@@ -113,7 +113,7 @@ def test_une_ligne_reduite_a_son_identifiant_ne_leve_pas():
 
 
 def test_une_ligne_expose_le_reseau_federe_correspondant():
-    assert Route.from_document(LIGNE).network().id == "N1"
+    assert Route.from_document(LIGNE).network().external_id == "N1"
 
 def test_un_passage_reprend_ses_horaires_du_document():
     passage = Departure.from_document(PASSAGE)
