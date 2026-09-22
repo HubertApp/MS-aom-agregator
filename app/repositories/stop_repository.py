@@ -1,5 +1,9 @@
 from typing import Any, Dict, List, Optional
 
+from pymongo import ASCENDING
+
+from app.core.text import normalize_for_search
+
 
 class StopRepository:
 
@@ -13,6 +17,37 @@ class StopRepository:
 
         cursor = self._collection.find({"stop_id": {"$in": stop_ids}})
         return {document["stop_id"]: document async for document in cursor}
+
+    async def search_by_name(
+        self,
+        query: str,
+        limit: int,
+        network_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Cherche les arrêts dont le nom contient la saisie, sans tenir compte
+        des accents, de la casse ni des espaces.
+
+        La comparaison porte sur `name_normalized`, posé à l'ingestion. La
+        saisie passe par la même normalisation, qui ne laisse subsister que
+        des caractères alphanumériques : la chaîne injectée dans la `$regex`
+        ne peut donc contenir aucun métacaractère.
+        """
+        normalized = normalize_for_search(query)
+        if not normalized:
+            return []
+
+        filters: Dict[str, Any] = {"name_normalized": {"$regex": normalized}}
+        if network_id:
+            filters["network_id"] = network_id
+
+        cursor = (
+            self._collection.find(filters)
+            .sort([("name_normalized", ASCENDING), ("stop_id", ASCENDING)])
+            .limit(limit)
+        )
+
+        return [document async for document in cursor]
 
     async def find_nearby(
         self,

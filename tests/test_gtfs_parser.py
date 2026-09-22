@@ -152,3 +152,21 @@ async def test_les_references_croisees_sont_namespacees_de_maniere_coherente(gtf
 
     assert resultat["trips"][0]["route_id"] == resultat["routes"][0]["route_id"]
     assert resultat["stop_times"][0]["trip_id"] == resultat["trips"][0]["trip_id"]
+
+
+async def test_chaque_arret_porte_la_forme_normalisee_de_son_nom(gtfs_feed):
+    resultat = await GTFSParser().parse(str(gtfs_feed), "N1")
+
+    marche = _arret(resultat["stops"], "N1:2")
+    assert marche["name_normalized"] == "placedumarche"
+
+
+async def test_un_arret_sans_nom_porte_une_forme_normalisee_vide(ecrire_flux_gtfs):
+    flux = ecrire_flux_gtfs({
+        **FLUX_DE_REFERENCE,
+        "stops.txt": "stop_id,stop_name,stop_lat,stop_lon\n1,,48.5,2.25\n",
+    })
+
+    resultat = await GTFSParser().parse(str(flux), "N1")
+
+    assert _arret(resultat["stops"], "N1:1")["name_normalized"] == ""

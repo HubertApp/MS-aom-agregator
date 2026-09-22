@@ -72,13 +72,14 @@ Chaque document de `stop_times` recopie les champs de son trajet et de sa ligne 
 
 Un fichier absent ou vide **ne déclenche aucune purge** : la collection est laissée en l'état plutôt que vidée par accident. C'est délibéré — mieux vaut une version périmée qu'un trou.
 
-Les index sont créés à chaque ingestion par `_ensure_indexes`, l'opération étant idempotente : `network_id` partout, `2dsphere` sur `stops.location`, et des index composés sur `stop_times` pour les deux accès chauds (`stop_id + departure_seconds`, `trip_id + stop_sequence`).
+Les index sont créés à chaque ingestion par `_ensure_indexes`, l'opération étant idempotente : `network_id` partout, `2dsphere` sur `stops.location`, `name_normalized` et `network_id + name_normalized` sur `stops` pour la recherche par nom, et des index composés sur `stop_times` pour les deux accès chauds (`stop_id + departure_seconds`, `trip_id + stop_sequence`).
 
 ## Surface GraphQL
 
 | Opération | Rôle | Garde-fous |
 |---|---|---|
 | `stopsNearby(lat, lon, radiusMeters, first, networkId)` | Arrêts autour d'un point, triés par distance | rayon ≤ 5 000 m, `first` ≤ 100, coordonnées validées |
+| `searchStops(query, first, networkId)` | Arrêts dont le nom contient la saisie | `query` ≥ 2 caractères alphanumériques, `first` ≤ 100 |
 | `stop(id)` | Un arrêt par identifiant préfixé | — |
 | `routes(networkId, page, pageSize)` | Lignes paginées | `pageSize` ≤ 100 |
 | `route(id)` | Une ligne par identifiant préfixé | — |
@@ -89,6 +90,8 @@ Les champs imbriqués font le gros du travail : `Stop.departures`, `Stop.routes`
 `Route.directions` mérite une mention. GTFS ne décrit pas une « direction » : il décrit des milliers de trajets. Le loader choisit, pour chaque `direction_id`, **le trajet qui dessert le plus d'arrêts** comme représentant, et n'en charge que les arrêts et le tracé. C'est une heuristique, pas une vérité du format : une ligne dont la variante la plus longue est un service exceptionnel affichera cette variante.
 
 `stopsNearby` filtre le réseau **à l'intérieur** de l'étape `$geoNear`, pas dans un `$match` en aval : le filtre est appliqué pendant le parcours de l'index géospatial.
+
+`searchStops` ignore accents, casse et espaces. MongoDB ne sachant pas faire cela dans une `$regex`, chaque arrêt porte un champ `name_normalized` posé à l'ingestion (minuscules, sans diacritiques ni ponctuation) ; la saisie passe par la même fonction `normalize_for_search`, si bien que « marche » trouve « Place du Marché ». La recherche porte sur une sous-chaîne et non sur un préfixe, pour que « gare » trouve aussi « Place de la Gare » : l'index n'est donc pleinement utile que lorsque `networkId` restreint le parcours. **Un réseau ingéré avant l'ajout de ce champ reste invisible de `searchStops` jusqu'à sa prochaine ingestion.**
 
 Les positions sortent en GeoJSON, qui stocke `[longitude, latitude]` dans cet ordre contre-intuitif. Le type `GeoJSONPoint` expose en plus `latitude` et `longitude` explicitement, pour que le front n'ait pas à s'en souvenir.
 

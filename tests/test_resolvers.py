@@ -3,7 +3,7 @@ import pytest
 from tests.conftest import FakeRouteRepository, FakeStopRepository, FakeLoader, fake_info
 
 from app.graphql.resolvers.routes import resolve_route, resolve_routes
-from app.graphql.resolvers.stops import resolve_stop, resolve_stops_nearby
+from app.graphql.resolvers.stops import resolve_search_stops, resolve_stop, resolve_stops_nearby
 from app.graphql.types.gtfs import MAX_FIRST, MAX_PAGE_SIZE, MAX_RADIUS_METERS
 
 ARRET = {"stop_id": "N1:1", "name": "Gare Centrale", "network_id": "N1"}
@@ -196,3 +196,59 @@ async def test_le_catalogue_de_lignes_convertit_les_documents_en_objets_ligne():
     catalogue = await resolve_routes(_contexte_lignes())
 
     assert [ligne.id for ligne in catalogue.items] == ["N1:R1"]
+
+
+ARRETS_TROUVES = [
+    {"stop_id": "N1:1", "name": "Gare Centrale", "network_id": "N1"},
+    {"stop_id": "N2:2", "name": "Gare du Nord", "network_id": "N2"},
+]
+
+
+def _contexte_recherche():
+    return fake_info(stop_repository=FakeStopRepository(matching=ARRETS_TROUVES))
+
+
+async def test_la_recherche_par_nom_retourne_les_arrets_correspondants():
+    arrets = await resolve_search_stops(_contexte_recherche(), query="gare")
+
+    assert [arret.name for arret in arrets] == ["Gare Centrale", "Gare du Nord"]
+
+
+async def test_la_recherche_par_nom_transmet_la_saisie_et_la_limite_au_repository():
+    info = _contexte_recherche()
+
+    await resolve_search_stops(info, query="gare", first=5, network_id="N1")
+
+    assert info.context["stop_repository"].search_calls == [
+        {"query": "gare", "limit": 5, "network_id": "N1"}
+    ]
+
+
+async def test_la_recherche_par_nom_sans_reseau_n_applique_aucun_filtre():
+    info = _contexte_recherche()
+
+    await resolve_search_stops(info, query="gare")
+
+    assert info.context["stop_repository"].search_calls[0]["network_id"] is None
+
+
+async def test_la_recherche_par_nom_refuse_de_ne_demander_aucun_arret():
+    with pytest.raises(ValueError, match="first"):
+        await resolve_search_stops(fake_info(), query="gare", first=0)
+
+
+async def test_la_recherche_par_nom_refuse_de_depasser_la_limite_d_arrets():
+    with pytest.raises(ValueError, match="first"):
+        await resolve_search_stops(fake_info(), query="gare", first=MAX_FIRST + 1)
+
+
+async def test_la_recherche_par_nom_refuse_une_saisie_trop_courte():
+    with pytest.raises(ValueError, match="query"):
+        await resolve_search_stops(fake_info(), query="g")
+
+
+async def test_la_recherche_par_nom_refuse_une_saisie_reduite_a_de_la_ponctuation():
+    # « -- » ne laisse aucun caractère après normalisation : la refuser évite
+    # de faire balayer toute la collection à MongoDB.
+    with pytest.raises(ValueError, match="query"):
+        await resolve_search_stops(fake_info(), query="--")

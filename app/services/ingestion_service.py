@@ -70,6 +70,12 @@ class IngestionService:
         if collection_name == "stops":
             await collection.create_index([("location", GEOSPHERE)])
             await collection.create_index([("stop_id", ASCENDING)])
+            # Deux index pour `searchStops` : le simple sert la recherche tous
+            # réseaux confondus, le composé celle limitée à un réseau.
+            await collection.create_index([("name_normalized", ASCENDING)])
+            await collection.create_index(
+                [("network_id", ASCENDING), ("name_normalized", ASCENDING)]
+            )
         elif collection_name == "stop_times":
             await collection.create_index([("stop_id", ASCENDING), ("departure_seconds", ASCENDING)])
             await collection.create_index([("trip_id", ASCENDING), ("stop_sequence", ASCENDING)])
