@@ -1,5 +1,5 @@
 
-from tests.conftest import FakeLoader, build_fake_context
+from tests.conftest import FakeLoader, FakeStopRepository, build_fake_context
 
 from app.graphql import context as context_module
 from app.graphql.schema import schema
@@ -86,3 +86,31 @@ async def test_le_catalogue_de_lignes_fonctionne_avec_le_vrai_contexte(mock_grap
         "totalPages": 3,
         "items": [{"id": "N1:R1"}, {"id": "N1:R2"}],
     }
+
+
+async def test_la_recherche_par_nom_est_exposee_au_front_en_camel_case():
+    contexte = build_fake_context(
+        stop_repository=FakeStopRepository(matching=[ARRET]),
+    )
+
+    resultat = await schema.execute(
+        'query { searchStops(query: "gare", first: 5, networkId: "N1") { id name } }',
+        context_value=contexte,
+    )
+
+    assert resultat.errors is None
+    assert resultat.data == {"searchStops": [{"id": "N1:1", "name": "Gare Centrale"}]}
+
+
+async def test_la_recherche_par_nom_se_contente_de_la_saisie():
+    contexte = build_fake_context(stop_repository=FakeStopRepository(matching=[ARRET]))
+
+    resultat = await schema.execute(
+        'query { searchStops(query: "gare") { name } }',
+        context_value=contexte,
+    )
+
+    assert resultat.errors is None
+    assert contexte["stop_repository"].search_calls == [
+        {"query": "gare", "limit": 20, "network_id": None}
+    ]

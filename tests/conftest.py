@@ -136,11 +136,14 @@ class FakeStopRepository:
         self,
         documents: Optional[Dict[str, Dict[str, Any]]] = None,
         nearby: Optional[List[Dict[str, Any]]] = None,
+        matching: Optional[List[Dict[str, Any]]] = None,
     ):
         self._documents = dict(documents or {})
         self._nearby = list(nearby or [])
+        self._matching = list(matching or [])
         self.batches: List[List[str]] = []
         self.calls: List[Dict[str, Any]] = []
+        self.search_calls: List[Dict[str, Any]] = []
 
     async def get_many_by_ids(self, stop_ids: List[str]) -> Dict[str, Dict[str, Any]]:
         self.batches.append(list(stop_ids))
@@ -153,6 +156,10 @@ class FakeStopRepository:
     async def find_nearby(self, **arguments: Any) -> List[Dict[str, Any]]:
         self.calls.append(arguments)
         return list(self._nearby)
+
+    async def search_by_name(self, **arguments: Any) -> List[Dict[str, Any]]:
+        self.search_calls.append(arguments)
+        return list(self._matching)
 
 
 class FakeRouteRepository:

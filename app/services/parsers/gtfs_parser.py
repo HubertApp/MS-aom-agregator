@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Type
 
 from pydantic import ValidationError
 
+from app.core.text import normalize_for_search
 from app.models.gtfs import (
     Agency,
     Calendar,
@@ -47,7 +48,10 @@ class GTFSParser(IParser):
             documents = await asyncio.to_thread(self._read_file, file_path, model, network_id)
             result[collection_name] = documents
 
-        result["stops"] = [self._to_geojson(stop) for stop in result.get("stops", [])]
+        result["stops"] = [
+            self._with_normalized_name(self._to_geojson(stop))
+            for stop in result.get("stops", [])
+        ]
         self._denormalize_stop_times(result)
 
         print("[GTFSParser] Fin du parsing ! "+ ", ".join(f"{len(docs)} {name}" for name, docs in result.items()))
@@ -97,6 +101,12 @@ class GTFSParser(IParser):
         lat = stop.pop("lat", 0.0) or 0.0
         lon = stop.pop("lon", 0.0) or 0.0
         stop["location"] = {"type": "Point", "coordinates": [lon, lat]}
+        return stop
+
+    @staticmethod
+    def _with_normalized_name(stop: Dict[str, Any]) -> Dict[str, Any]:
+        """Ajoute à un arrêt la forme comparable de son nom, celle qu'interroge `searchStops`."""
+        stop["name_normalized"] = normalize_for_search(stop.get("name"))
         return stop
 
     def _denormalize_stop_times(self, result: Dict[str, List[Dict[str, Any]]]) -> None:

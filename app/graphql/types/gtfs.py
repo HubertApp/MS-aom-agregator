@@ -10,6 +10,9 @@ from app.models.gtfs import to_seconds
 MAX_FIRST = 100
 MAX_PAGE_SIZE = 100
 MAX_RADIUS_METERS = 5_000
+# En deçà, la saisie est trop peu discriminante : la regex remonterait une
+# part énorme de la collection pour un résultat inexploitable.
+MIN_QUERY_LENGTH = 2
 
 
 @strawberry.type

@@ -293,3 +293,17 @@ async def test_l_echec_de_purge_d_une_collection_n_empeche_pas_les_suivantes(ser
 
     routes_en_base = await documents_de(service, "routes", "N1")
     assert {doc["route_id"] for doc in routes_en_base} == {"N1:R2"}
+
+
+async def _index_de(service, collection):
+    await service._ensure_indexes(collection)
+    information = await service.db[collection].index_information()
+    return {tuple(champ for champ, _ in index["key"]) for index in information.values()}
+
+
+async def test_les_arrets_sont_indexes_sur_le_nom_normalise(service):
+    assert ("name_normalized",) in await _index_de(service, "stops")
+
+
+async def test_les_arrets_sont_indexes_par_reseau_puis_nom_normalise(service):
+    assert ("network_id", "name_normalized") in await _index_de(service, "stops")
